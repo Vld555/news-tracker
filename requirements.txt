@@ -1,0 +1,8 @@
+Django==5.0.2
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+django-environ==0.11.2
+psycopg2-binary==2.9.9
+pgvector==0.2.5  # Для работы с векторными эмбеддингами в Django
+celery==5.3.6
+redis==5.0.1
