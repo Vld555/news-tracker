@@ -19,7 +19,7 @@ class Source(models.Model):
         return self.name
 
 
-class Article(models.fields.Model):
+class Article(models.Model):
     source = models.ForeignKey(
         Source, on_delete=models.CASCADE, related_name='articles')
     title = models.CharField(max_length=500)
