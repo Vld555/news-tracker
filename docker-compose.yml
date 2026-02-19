@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: pgvector/pgvector:pg16  # Специальный образ Postgres с уже установленным pgvector
+    image: pgvector/pgvector:pg16 
     environment:
       POSTGRES_USER: tracker_user
       POSTGRES_PASSWORD: tracker_password
@@ -36,7 +36,7 @@ services:
 
   celery:
     build: .
-    command: celery -A core worker -l info  # "core" - это будет название главной папки Django
+    command: celery -A core worker -l info  
     volumes:
       - .:/app
     environment:
