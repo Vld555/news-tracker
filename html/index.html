@@ -65,37 +65,30 @@
         createApp({
             data() {
                 return {
-                    // Пока захардкоженные данные (формат как из твоего API)
-                    articles: [
-                        { 
-                            id: 1, 
-                            source_name: 'Habr', 
-                            title: 'Как мы настраивали Celery и Redis в Django', 
-                            content: 'Подробный гайд по настройке асинхронных задач. Разбираем подводные камни при парсинге большого количества данных...', 
-                            url: '#',
-                            published_at: '2026-03-18T10:00:00Z' 
-                        },
-                        { 
-                            id: 2, 
-                            source_name: 'TechCrunch', 
-                            title: 'OpenAI представила новую модель эмбеддингов', 
-                            content: 'Новая модель обещает стать быстрее и дешевле, что отлично подойдет для создания RAG-приложений на базе PostgreSQL и pgvector.', 
-                            url: '#',
-                            published_at: '2026-03-18T08:30:00Z' 
-                        },
-                        { 
-                            id: 3, 
-                            source_name: 'BBC News', 
-                            title: 'Глобальные рынки показывают рост', 
-                            content: 'Акции технологических компаний продолжают уверенный рост на фоне отчетов о прибылях за первый квартал текущего года.', 
-                            url: '#',
-                            published_at: '2026-03-17T15:45:00Z' 
-                        }
-                    ]
+                    articles: [],
+                    loading: true,
+                    error: null
                 }
             },
+            mounted() {
+                // Как только страница загрузилась, стучимся в наш DRF API
+                this.fetchArticles();
+            },
             methods: {
-                // Простая функция для красивого отображения даты
+                async fetchArticles() {
+                    try {
+                        const response = await fetch('http://localhost:8000/api/v1/articles/');
+                        if (!response.ok) throw new Error('Ошибка сети');
+                        
+                        // Сохраняем полученные новости в нашу реактивную переменную
+                        this.articles = await response.json();
+                    } catch (err) {
+                        this.error = "Не удалось загрузить статьи. Проверьте, запущен ли бэкенд.";
+                        console.error(err);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
                 formatDate(dateString) {
                     const date = new Date(dateString);
                     return date.toLocaleDateString('ru-RU', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });

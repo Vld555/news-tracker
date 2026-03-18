@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: pgvector/pgvector:pg16 
@@ -11,6 +9,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Добавляем проверку здоровья: контейнер будет пинговать сам себя
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracker_user -d news_tracker_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -31,8 +35,10 @@ services:
       - DB_PASSWORD=tracker_password
       - REDIS_URL=redis://redis:6379/0
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy # Ждем, пока healthcheck базы не скажет "OK"
+      redis:
+        condition: service_started
 
   celery:
     build: .
@@ -46,9 +52,10 @@ services:
       - DB_PASSWORD=tracker_password
       - REDIS_URL=redis://redis:6379/0
     depends_on:
-      - db
-      - redis
-      - web
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   postgres_data:
