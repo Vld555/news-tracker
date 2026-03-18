@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import environ
 from datetime import timedelta
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
@@ -125,6 +126,7 @@ CELERY_BROKER_URL = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
+
 # Настройки Django REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -140,3 +142,11 @@ SIMPLE_JWT = {
 
 AUTH_USER_MODEL = 'news.User'
 CORS_ALLOW_ALL_ORIGINS = True
+
+CELERY_BEAT_SCHEDULE = {
+    'parse-news-every-minute': {
+        'task': 'news.tasks.parse_rss_and_embed', # Путь к твоей функции
+        'schedule': 60.0, # Выполнять каждые 60 секунд (для теста)
+        # 'schedule': crontab(minute='*/30'), # Раскомментируй потом для запуска раз в 30 минут
+    },
+}

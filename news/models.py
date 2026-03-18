@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from pgvector.django import VectorField
-
+from django.utils import timezone
 
 class User(AbstractUser):
     daily_reading_limit = models.IntegerField(
@@ -38,7 +38,7 @@ class ReadingSession(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='reading_sessions')
     article = models.ForeignKey(Article, on_delete=models.CASCADE)
-    start_time = models.DateTimeField(auto_now_add=True)
+    start_time = models.DateTimeField(default=timezone.now)
     duration_seconds = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

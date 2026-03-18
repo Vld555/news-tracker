@@ -56,6 +56,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+  celery-beat:
+    build: .
+    command: celery -A core beat -l info
+    volumes:
+      - .:/app
+    environment:
+      - DB_HOST=db
+      - DB_NAME=news_tracker_db
+      - DB_USER=tracker_user
+      - DB_PASSWORD=tracker_password
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   postgres_data:

@@ -23,8 +23,8 @@ def parse_rss_and_embed():
     for source in sources:
         logger.info(f"Парсинг источника: {source.name}")
         try:
-            response = requests.get(sources.rss_url, timeout=50)
-            soup = BeautifulSoup(response.content, '')
+            response = requests.get(source.rss_url, timeout=50)
+            soup = BeautifulSoup(response.content, 'lxml')
             items = soup.find_all('item')
 
             for item in items[:10]:
