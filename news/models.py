@@ -24,10 +24,10 @@ class Article(models.Model):
         Source, on_delete=models.CASCADE, related_name='articles')
     title = models.CharField(max_length=500)
     content = models.TextField()
+    # НОВОЕ ПОЛЕ:
+    category = models.CharField(max_length=100, blank=True, null=True) 
     url = models.URLField(unique=True)
     published_at = models.DateTimeField()
-
-    # Вектор для RAG (размерность 768 под популярные энкодеры)
     embedding = VectorField(dimensions=768, blank=True, null=True)
 
     def __str__(self):

@@ -144,9 +144,12 @@ AUTH_USER_MODEL = 'news.User'
 CORS_ALLOW_ALL_ORIGINS = True
 
 CELERY_BEAT_SCHEDULE = {
-    'parse-news-every-minute': {
-        'task': 'news.tasks.parse_rss_and_embed', # Путь к твоей функции
-        'schedule': 60.0, # Выполнять каждые 60 секунд (для теста)
-        # 'schedule': crontab(minute='*/30'), # Раскомментируй потом для запуска раз в 30 минут
+    'parse-every-minute': {
+        'task': 'news.tasks.parse_rss_and_embed',
+        'schedule': 60.0,
+    },
+    'clear-every-2-hours': {
+        'task': 'news.tasks.clear_old_articles',
+        'schedule': 7200.0, # 2 часа в секундах
     },
 }

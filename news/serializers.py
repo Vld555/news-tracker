@@ -7,12 +7,12 @@ class SourceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ArticleSerializer(serializers.ModelSerializer):
-    source_name = serializers.CharField(source='source.name', read_only=True)
+    source_name = serializers.ReadOnlyField(source='source.name')
 
     class Meta:
         model = Article
-        fields = ['id', 'source', 'source_name', 'title', 'content', 'url', 'published_at']
-        # Поле embedding мы умышленно исключаем
+
+        fields = ['id', 'source_name', 'category', 'title', 'content', 'url', 'published_at']
 
 class HeartbeatSerializer(serializers.Serializer):
     """

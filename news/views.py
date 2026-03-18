@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
@@ -11,14 +11,24 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
 from django.db.models import Sum
 from datetime import timedelta
-from .models import ReadingSession
+from .models import ReadingSession, Source
+
 
 
 class SourceViewSet(viewsets.ModelViewSet):
     queryset = Source.objects.all()
     serializer_class = SourceSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    
+class SourceListCreateView(generics.ListCreateAPIView):
+    queryset = Source.objects.all()
+    serializer_class = SourceSerializer
+    permission_classes = [IsAuthenticated]
 
+    def perform_create(self, serializer):
+        # При желании можно привязать источник к пользователю, 
+        # если добавишь ForeignKey в модель Source
+        serializer.save()
 
 class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -76,12 +86,13 @@ class AnalyticsAPIView(APIView):
         today_sec = today_sessions.aggregate(total=Sum('duration_seconds'))['total'] or 0
         today_min = today_sec // 60
 
-        # 3. Данные для круговой диаграммы (группировка по категориям)
-        categories_qs = sessions.values('article__source__category').annotate(
+        # 3. Данные для круговой диаграммы (группировка по НОВОЙ категории статьи)
+        categories_qs = sessions.values('article__category').annotate(
             total_time=Sum('duration_seconds')
         ).order_by('-total_time')
-        
-        cat_labels = [item['article__source__category'] or 'Разное' for item in categories_qs]
+
+        # Используем поле 'article__category' вместо 'article__source__category'
+        cat_labels = [item['article__category'] or 'Без категории' for item in categories_qs]
         cat_data = [item['total_time'] // 60 for item in categories_qs]
 
         # 4. Данные для столбчатой диаграммы (активность по дням)
@@ -101,3 +112,48 @@ class AnalyticsAPIView(APIView):
             "categories": {"labels": cat_labels, "data": cat_data},
             "activity": {"labels": days_labels, "data": days_data}
         })
+    
+
+class ArticleDetailView(generics.RetrieveAPIView):
+    queryset = Article.objects.all()
+    serializer_class = ArticleSerializer
+    permission_classes = [] # Для теста разрешим всем
+
+
+
+from django.utils.timezone import now
+from datetime import timedelta
+
+class HeartbeatView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        # Получаем количество секунд из запроса (по умолчанию 15)
+        seconds_to_add = request.data.get('duration_seconds', 15)
+        
+        try:
+            article = Article.objects.get(pk=pk)
+            
+            # Ищем или создаем активную сессию (start_time из твоих моделей)
+            session, created = ReadingSession.objects.get_or_create(
+                user=request.user,
+                article=article,
+                is_active=True,
+                # Если сессия создана менее 2 часов назад, продолжаем её
+                start_time__gte=now() - timedelta(hours=2),
+                defaults={'duration_seconds': 0}
+            )
+            
+            # Прибавляем полученные секунды
+            session.duration_seconds += int(seconds_to_add)
+            session.save()
+            
+            return Response({
+                "status": "success",
+                "total_seconds": session.duration_seconds
+            })
+            
+        except Article.DoesNotExist:
+            return Response({"error": "Статья не найдена"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)

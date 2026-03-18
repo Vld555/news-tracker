@@ -1,12 +1,21 @@
 import logging
 import requests
+import nltk # Добавили импорт для загрузки словарей
 from bs4 import BeautifulSoup
 from django.utils import timezone
 from celery import shared_task
 from sentence_transformers import SentenceTransformer
 from .models import Article, Source
+from newspaper import Article as NewspaperArticle
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
+
+# Загружаем нужные компоненты для NLP один раз при импорте
+try:
+    nltk.download('punkt', quiet=True)
+except:
+    pass
 
 embedder = None
 MODEL_NAME = 'DeepPavlov/rubert-base-cased-sentence'
@@ -14,45 +23,80 @@ MODEL_NAME = 'DeepPavlov/rubert-base-cased-sentence'
 @shared_task
 def parse_rss_and_embed():
     global embedder
-
     if embedder is None:
-        logger.info(f"Загрузка ML-модели: {MODEL_NAME}...")
         embedder = SentenceTransformer(MODEL_NAME)
-    sources = Source.objects.exclude(rss_url__isnull=True).exclude(rss_url__exact='') # скачиваем новотси
+    
+    sources = Source.objects.exclude(rss_url__isnull=True).exclude(rss_url__exact='')
     
     for source in sources:
-        logger.info(f"Парсинг источника: {source.name}")
         try:
-            response = requests.get(source.rss_url, timeout=50)
+            response = requests.get(source.rss_url, timeout=30)
             soup = BeautifulSoup(response.content, 'xml')
             items = soup.find_all('item')
 
             for item in items[:10]:
-                title = item.title.text if item.title else 'Без заголовка'
                 link = item.link.text if item.link else ''
-                description = item.description.text if item.description else ''
-                
-                # Если статья с таким URL уже есть в базе — пропускаем
                 if not link or Article.objects.filter(url=link).exists():
                     continue
+                
+                full_content = ""
+                article_category = None
+                
+                # Попытка 1: Качаем полный текст через newspaper3k
+                try:
+                    news_article = NewspaperArticle(link, language='ru') 
+                    news_article.download()
+                    news_article.parse()
+                    full_content = news_article.text # СОХРАНЯЕМ ТЕКСТ СРАЗУ
                     
-                # 1. Готовим текст для нейросети
-                text_for_embedding = f"{title}. {description}"
+                    # Пытаемся сделать NLP отдельно, чтобы не сломать всё
+                    try:
+                        news_article.nlp()
+                        if news_article.keywords:
+                            article_category = news_article.keywords[0].capitalize()
+                    except:
+                        pass
+                except Exception as e:
+                    logger.warning(f"Newspaper3k не справился с {link}: {e}")
+
+                # Попытка 2 (Золотое правило): Если текст не скачался, берем из RSS
+                if not full_content or len(full_content) < 150:
+                    rss_description = item.description.text if item.description else ""
+                    full_content = BeautifulSoup(rss_description, "html.parser").get_text()
+
+                # Попытка 3: Ищем категорию в RSS, если NLP не сработал
+                if not article_category:
+                    article_category = item.category.text if item.category else None
                 
-                # 2. Магия ML: превращаем текст в вектор [0.12, -0.45, ...]
-                # tolist() нужен, т.к. pgvector ожидает обычный python-список, а не numpy array
-                embedding = embedder.encode(text_for_embedding).tolist()
+                # Финальный запасной вариант для категории
+                if not article_category:
+                    article_category = source.category or "Общее"
+
+                if not full_content:
+                    full_content = "Текст статьи временно недоступен."
+
+                title = item.title.text if item.title else 'Без заголовка'
                 
-                # 3. Сохраняем в PostgreSQL
+                # Делаем эмбеддинг
+                embedding = embedder.encode(f"{title}. {full_content[:500]}").tolist()
+                
                 Article.objects.create(
                     source=source,
                     title=title,
-                    content=description,
+                    content=full_content,
+                    category=article_category,
                     url=link,
-                    published_at=timezone.now(), # Для упрощения берем текущее время
+                    published_at=timezone.now(),
                     embedding=embedding
                 )
-                logger.info(f"✅ Успешно добавлена и векторизована статья: {title}")
+                logger.info(f"✅ Добавлена статья [{article_category}]: {title}")
 
         except Exception as e:
-            logger.error(f"❌ Ошибка при парсинге {source.name}: {e}")
+            logger.error(f"❌ Ошибка источника {source.name}: {e}")
+
+@shared_task
+def clear_old_articles():
+    # Удаляем статьи старше 24 часов (можешь поменять на 2 часа для теста)
+    threshold = timezone.now() - timedelta(hours=24)
+    deleted, _ = Article.objects.filter(published_at__lt=threshold).delete()
+    logger.info(f"🧹 Очистка: удалено {deleted} старых статей.")

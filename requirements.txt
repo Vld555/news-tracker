@@ -21,3 +21,6 @@ requests
 sentence-transformers
 torch
 lxml
+
+newspaper3k==0.2.8
+lxml_html_clean
