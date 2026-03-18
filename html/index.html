@@ -16,13 +16,25 @@
                         <span class="text-2xl font-black text-indigo-600 tracking-tight">NewsTracker</span>
                     </div>
                     <div class="flex items-center space-x-6">
-                        <div class="text-gray-400 cursor-not-allowed flex items-center space-x-1" title="Доступно после авторизации">
+                        
+                        <div v-if="!isAuthenticated" class="text-gray-400 cursor-not-allowed flex items-center space-x-1" title="Доступно после авторизации">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                             <span class="text-sm font-medium">Статистика</span>
                         </div>
-                        <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors duration-200">
+
+                        <a v-else href="dashboard.html" class="text-gray-600 hover:text-indigo-600 flex items-center space-x-1 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                            <span class="text-sm font-medium">Дашборд</span>
+                        </a>
+
+                        <a v-if="!isAuthenticated" href="login.html" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors duration-200">
                             Войти
-                        </button>
+                        </a>
+
+                        <a v-else href="profile.html" class="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md hover:ring-2 hover:ring-indigo-300 transition-all">
+                            П
+                        </a>
+                        
                     </div>
                 </div>
             </div>
@@ -67,11 +79,15 @@
                 return {
                     articles: [],
                     loading: true,
-                    error: null
+                    error: null,
+                    isAuthenticated: false
                 }
             },
             mounted() {
                 // Как только страница загрузилась, стучимся в наш DRF API
+                if (localStorage.getItem('access_token')) {
+                    this.isAuthenticated = true;
+                }
                 this.fetchArticles();
             },
             methods: {

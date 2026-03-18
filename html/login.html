@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход - NewsTracker</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 font-sans antialiased flex items-center justify-center min-h-screen">
+    <div id="app" class="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-black text-indigo-600 tracking-tight mb-2">NewsTracker</h1>
+            <p class="text-gray-500">Войдите, чтобы получать умные рекомендации</p>
+        </div>
+
+        <div v-if="errorMessage" class="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 text-center">
+            {{ errorMessage }}
+        </div>
+
+        <form @submit.prevent="loginUser" class="space-y-5">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Имя пользователя (Логин)</label>
+                <input type="text" v-model="username" required class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+                <input type="password" v-model="password" required class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+            </div>
+
+            <button type="submit" :disabled="isLoading" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex justify-center items-center">
+                <span v-if="!isLoading">Войти</span>
+                <svg v-else class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            </button>
+        </form>
+        
+        <div class="mt-6 text-center text-sm text-gray-500">
+            <a href="index.html" class="hover:text-indigo-600 transition-colors">← Вернуться на главную</a>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    username: '',
+                    password: '',
+                    errorMessage: '',
+                    isLoading: false
+                }
+            },
+            methods: {
+                async loginUser() {
+                    this.isLoading = true;
+                    this.errorMessage = '';
+                    
+                    try {
+                        const response = await fetch('http://localhost:8000/api/v1/token/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                username: this.username, 
+                                password: this.password 
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Неверный логин или пароль');
+                        }
+
+                        const data = await response.json();
+                        
+                        // Сохраняем токены в браузере (localStorage)
+                        localStorage.setItem('access_token', data.access);
+                        localStorage.setItem('refresh_token', data.refresh);
+                        
+                        // Если всё ок — перекидываем пользователя на главную страницу
+                        window.location.href = 'index.html';
+                        
+                    } catch (error) {
+                        this.errorMessage = error.message;
+                    } finally {
+                        this.isLoading = false;
+                    }
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
