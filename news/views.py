@@ -1,10 +1,13 @@
+import os
+from catboost import CatBoostClassifier
+import pandas as pd
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 
-from .models import Source, Article, ReadingSession
-from .serializers import SourceSerializer, ArticleSerializer, HeartbeatSerializer
+from .models import Source, Article, ReadingSession, User
+from .serializers import SourceSerializer, ArticleSerializer, HeartbeatSerializer, UserSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -13,7 +16,21 @@ from django.db.models import Sum
 from datetime import timedelta
 from .models import ReadingSession, Source
 
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
 
+    def get_object(self):
+        return self.request.user
+
+    def patch(self, request, *args, **kwargs):
+
+        if 'daily_reading_limit' in request.data:
+            try:
+                request.data['daily_reading_limit'] = int(request.data['daily_reading_limit'])
+            except ValueError:
+                pass
+        return super().patch(request, *args, **kwargs)
 
 class SourceViewSet(viewsets.ModelViewSet):
     queryset = Source.objects.all()
@@ -25,46 +42,71 @@ class SourceListCreateView(generics.ListCreateAPIView):
     serializer_class = SourceSerializer
     permission_classes = [IsAuthenticated]
 
-    def perform_create(self, serializer):
-        # При желании можно привязать источник к пользователю, 
-        # если добавишь ForeignKey в модель Source
-        serializer.save()
 
-class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    Пока используем ReadOnly, так как статьи будут добавляться 
-    автоматически через Celery-воркеры (парсинг).
-    """
-    queryset = Article.objects.all().order_by('-published_at')
+
+class ArticleListView(generics.ListAPIView):
     serializer_class = ArticleSerializer
+    # permission_classes = [IsAuthenticated] # Раскомментируй, если лента только для залогиненных
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def heartbeat(self, request, pk=None):
-        article = self.get_object()
-        serializer = HeartbeatSerializer(data=request.data)
+    def get_queryset(self):
+        user = self.request.user
+        
+        # 1. Берем 100 самых свежих статей из базы (Холодный старт)
+        queryset = Article.objects.order_by('-published_at')[:100]
+        
+        # Если юзер не авторизован, отдаем просто свежие новости по дате
+        if not user.is_authenticated:
+            return queryset
 
-        if serializer.is_valid():
-            duration = serializer.validated_data['duration_seconds']
+        model_path = f'ml_models/catboost_user_{user.id}.cbm'
+        
+        # 2. Если модель еще не обучилась (нет файла), отдаем ленту по дате
+        if not os.path.exists(model_path):
+            return queryset
 
-            # Ищем активную сессию чтения или создаем новую
-            session, created = ReadingSession.objects.get_or_create(
-                user=request.user,
-                article=article,
-                is_active=True,
-                defaults={'duration_seconds': 0}
-            )
+        # 3. УМНОЕ РАНЖИРОВАНИЕ (Inference)
+        try:
+            # Загружаем твою персональную модель
+            model = CatBoostClassifier()
+            model.load_model(model_path)
 
-            # Прибавляем полученные секунды
-            session.duration_seconds += duration
-            session.save()
+            data = []
+            articles_list = list(queryset) # Выгружаем 100 статей в список
+            
+            # Собираем признаки точно так же, как при обучении
+            for article in articles_list:
+                row = {
+                    'category': article.category or 'Общее',
+                    'source': article.source.name,
+                }
+                if article.embedding is not None:
+                    for i, val in enumerate(article.embedding):
+                        row[f'emb_{i}'] = val
+                else:
+                    for i in range(768):
+                        row[f'emb_{i}'] = 0.0
+                data.append(row)
 
-            return Response({
-                'status': 'success',
-                'session_id': session.id,
-                'total_duration': session.duration_seconds
-            })
+            # Создаем DataFrame (таблицу) для CatBoost
+            df = pd.DataFrame(data)
+            
+            # Получаем вероятности (от 0.0 до 1.0), что статья тебе зайдет
+            # [:, 1] означает "взять вероятность для класса 1 (Позитив)"
+            probabilities = model.predict_proba(df)[:, 1]
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Привязываем предсказанные вероятности к объектам статей
+            for i, article in enumerate(articles_list):
+                article.match_score = probabilities[i]
+
+            # Сортируем: чем выше вероятность (score), тем выше статья в ленте!
+            articles_list.sort(key=lambda x: x.match_score, reverse=True)
+            
+            return articles_list
+
+        except Exception as e:
+            print(f"Ошибка при ранжировании: {e}")
+            # Если что-то пошло не так (например, ошибка Pandas), отдаем просто по дате
+            return queryset
 
 
 class AnalyticsAPIView(APIView):
@@ -108,7 +150,7 @@ class AnalyticsAPIView(APIView):
 
         return Response({
             "today_minutes": today_min,
-            "limit_minutes": getattr(user, 'daily_reading_limit', 60), 
+            "limit_minutes": (getattr(user, 'daily_reading_limit', 3600) or 0) // 60,
             "categories": {"labels": cat_labels, "data": cat_data},
             "activity": {"labels": days_labels, "data": days_data}
         })

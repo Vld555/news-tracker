@@ -24,3 +24,6 @@ lxml
 
 newspaper3k==0.2.8
 lxml_html_clean
+
+catboost==1.2.3
+pandas==2.1.4

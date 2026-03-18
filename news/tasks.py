@@ -5,9 +5,10 @@ from bs4 import BeautifulSoup
 from django.utils import timezone
 from celery import shared_task
 from sentence_transformers import SentenceTransformer
-from .models import Article, Source
+from .models import Article, Source, User
 from newspaper import Article as NewspaperArticle
 from datetime import timedelta
+from .ml import train_user_model
 
 logger = logging.getLogger(__name__)
 
@@ -100,3 +101,20 @@ def clear_old_articles():
     threshold = timezone.now() - timedelta(hours=24)
     deleted, _ = Article.objects.filter(published_at__lt=threshold).delete()
     logger.info(f"🧹 Очистка: удалено {deleted} старых статей.")
+
+
+
+@shared_task
+def retrain_recommendation_models():
+    """Задача запускается по расписанию и обновляет ML-модели всех активных юзеров"""
+    users = User.objects.all()
+    updated_count = 0
+    
+    for user in users:
+        logger.info(f"Запуск обучения для юзера {user.username}...")
+        success = train_user_model(user.id)
+        if success:
+            updated_count += 1
+            
+    logger.info(f"🎯 Обучение завершено. Обновлено моделей: {updated_count}")
+    return updated_count

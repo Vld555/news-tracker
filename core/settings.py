@@ -150,6 +150,12 @@ CELERY_BEAT_SCHEDULE = {
     },
     'clear-every-2-hours': {
         'task': 'news.tasks.clear_old_articles',
-        'schedule': 7200.0, # 2 часа в секундах
+        'schedule': 7200.0,
+    },
+    # НОВАЯ ЗАДАЧА: Обучение ML-моделей
+    'train-models-every-12-hours': {
+        'task': 'news.tasks.retrain_recommendation_models',
+        'schedule': 43200.0, # 12 часов в секундах (для продакшена)
+
     },
 }

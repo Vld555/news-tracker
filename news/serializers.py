@@ -1,10 +1,17 @@
 from rest_framework import serializers
 from .models import Source, Article, ReadingSession
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username', 'daily_reading_limit']
 
 class SourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Source
-        fields = '__all__'
+        fields = ['id', 'name', 'url', 'rss_url', 'category']
 
 class ArticleSerializer(serializers.ModelSerializer):
     source_name = serializers.ReadOnlyField(source='source.name')
