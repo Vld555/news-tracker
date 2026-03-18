@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чтение статьи - NewsTracker</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 font-sans antialiased text-gray-800">
+    <div id="app" class="min-h-screen flex flex-col">
+        
+        <header class="sticky top-0 bg-white/90 backdrop-blur-md border-b border-gray-200 z-10 shadow-sm">
+            <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+                <a href="#" class="text-gray-500 hover:text-indigo-600 flex items-center text-sm font-medium transition-colors">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    В ленту
+                </a>
+                
+                <div class="flex items-center space-x-2 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+                    <div class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                    <span class="text-xs font-mono font-bold text-indigo-700">
+                        Время чтения: {{ formattedTime }}
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full bg-white shadow-sm mt-4 mb-8 rounded-2xl border border-gray-100">
+            
+            <div class="flex items-center space-x-3 mb-6">
+                <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-700 uppercase tracking-wider">
+                    Machine Learning
+                </span>
+                <span class="text-sm text-gray-500">Опубликовано сегодня в 10:30</span>
+                <span class="text-sm text-gray-500 font-medium">• Источник: Habr</span>
+            </div>
+
+            <h1 class="text-4xl font-black text-gray-900 mb-8 leading-tight">
+                Как мы внедрили pgvector и ускорили семантический поиск в 10 раз
+            </h1>
+
+            <div class="prose max-w-none text-lg leading-relaxed text-gray-700 space-y-6 mb-12">
+                <p>При разработке новостного трекера мы столкнулись с проблемой: классический полнотекстовый поиск не понимает контекста. Если пользователь ищет "искусственный интеллект", он может пропустить отличную статью, где используется только термин "нейросеть" или "LLM".</p>
+                <p>Решением стал переход на векторный поиск (Vector Search). Мы взяли обычный PostgreSQL и установили расширение <strong>pgvector</strong>. Это позволило нам хранить эмбеддинги статей прямо рядом с их метаданными.</p>
+                <p>Пайплайн выглядит так: фоновый воркер Celery скачивает статью, пропускает её через предобученную модель (например, rubert-base), получает вектор размерностью 768 и записывает в БД. Теперь при запросе мы ищем ближайших соседей по косинусному расстоянию.</p>
+                <p>Такой подход стал надежным фундаментом для нашей рекомендательной системы, позволив алгоритмам ранжирования подбирать максимально релевантный контент для каждого пользователя.</p>
+            </div>
+
+            <div class="border-t border-gray-100 pt-8 flex flex-col items-center">
+                <h3 class="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wide">Помогите настроить вашу ленту</h3>
+                <div class="flex space-x-4">
+                    <button 
+                        @click="submitFeedback('like')"
+                        :class="feedback === 'like' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+                        class="flex items-center px-6 py-3 rounded-xl border transition-colors font-medium">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path></svg>
+                        Больше такого
+                    </button>
+                    <button 
+                        @click="submitFeedback('dislike')"
+                        :class="feedback === 'dislike' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+                        class="flex items-center px-6 py-3 rounded-xl border transition-colors font-medium">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"></path></svg>
+                        Меньше такого
+                    </button>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    readingSeconds: 0,
+                    timerInterval: null,
+                    feedback: null // 'like' или 'dislike'
+                }
+            },
+            computed: {
+                formattedTime() {
+                    const m = Math.floor(this.readingSeconds / 60).toString().padStart(2, '0');
+                    const s = (this.readingSeconds % 60).toString().padStart(2, '0');
+                    return `${m}:${s}`;
+                }
+            },
+            methods: {
+                sendHeartbeat() {
+                    // Симуляция отправки POST-запроса на бэкенд (для обновления ReadingSession)
+                    console.log(`[API Call] Heartbeat: прочитано ${this.readingSeconds} сек.`);
+                },
+                submitFeedback(type) {
+                    this.feedback = type;
+                    // Симуляция отправки фидбека (целевая переменная для CatBoost)
+                    console.log(`[API Call] Пользователь поставил: ${type}. Обновляем веса в модели.`);
+                }
+            },
+            mounted() {
+                // Запускаем трекер чтения
+                this.timerInterval = setInterval(() => {
+                    this.readingSeconds++;
+                    
+                    // Эмулируем отправку пинга каждые 15 секунд
+                    if (this.readingSeconds > 0 && this.readingSeconds % 15 === 0) {
+                        this.sendHeartbeat();
+                    }
+                }, 1000);
+            },
+            beforeUnmount() {
+                clearInterval(this.timerInterval);
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
