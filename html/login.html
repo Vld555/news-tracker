@@ -74,11 +74,9 @@
 
                         const data = await response.json();
                         
-                        // Сохраняем токены в браузере (localStorage)
                         localStorage.setItem('access_token', data.access);
                         localStorage.setItem('refresh_token', data.refresh);
                         
-                        // Если всё ок — перекидываем пользователя на главную страницу
                         window.location.href = 'index.html';
                         
                     } catch (error) {

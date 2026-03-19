@@ -116,14 +116,12 @@ createApp({
     async mounted() {
         const token = localStorage.getItem('access_token');
         
-        // Если токена нет, отправляем логиниться
         if (!token) {
             window.location.href = 'login.html';
             return;
         }
 
         try {
-            // Делаем защищенный запрос к нашему новому API
             const response = await fetch('http://localhost:8000/api/v1/analytics/', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -132,20 +130,17 @@ createApp({
             });
 
             if (response.status === 401) {
-                // Токен протух
                 localStorage.removeItem('access_token');
                 window.location.href = 'login.html';
                 return;
             }
             if (!response.ok) {
-                // Если статус не 200-299, читаем текст ошибки (скорее всего там HTML от Django)
                 const errorText = await response.text();
                 throw new Error(`Ошибка сервера ${response.status}. Загляни в консоль Docker.`);
             }
             
             this.analytics = await response.json();
             
-            // Как только данные получены, рисуем графики
             this.$nextTick(() => {
                 this.renderCharts();
             });
@@ -159,7 +154,6 @@ createApp({
     },
     methods: {
         renderCharts() {
-            // 1. Кольцевая диаграмма
             const ctxCategory = document.getElementById('categoryChart').getContext('2d');
             new Chart(ctxCategory, {
                 type: 'doughnut',
@@ -174,7 +168,6 @@ createApp({
                 options: { responsive: true, maintainAspectRatio: false, cutout: '75%' }
             });
 
-            // 2. Столбчатая диаграмма
             const ctxActivity = document.getElementById('activityChart').getContext('2d');
             new Chart(ctxActivity, {
                 type: 'bar',

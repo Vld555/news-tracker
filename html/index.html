@@ -98,7 +98,6 @@
                 }
             },
             mounted() {
-                // Как только страница загрузилась, стучимся в наш DRF API
                 if (localStorage.getItem('access_token')) {
                     this.isAuthenticated = true;
                 }
@@ -109,8 +108,7 @@
                     try {
                         const response = await fetch('http://localhost:8000/api/v1/articles/');
                         if (!response.ok) throw new Error('Ошибка сети');
-                        
-                        // Сохраняем полученные новости в нашу реактивную переменную
+                    
                         this.articles = await response.json();
                     } catch (err) {
                         this.error = "Не удалось загрузить статьи. Проверьте, запущен ли бэкенд.";

@@ -99,7 +99,6 @@
                                 'Authorization': `Bearer ${token}`,
                                 'Content-Type': 'application/json'
                             },
-                            // Теперь мы передаем количество секунд, которое хотим ПРИБАВИТЬ
                             body: JSON.stringify({
                                 "duration_seconds": 15 
                             })
@@ -118,10 +117,8 @@
                 }
             },
             async mounted() {
-                // Сначала загружаем данные статьи
                 await this.fetchArticle();
 
-                // Затем запускаем таймер
                 this.timerInterval = setInterval(() => {
                     this.readingSeconds++;
                     if (this.readingSeconds % 15 === 0) this.sendHeartbeat();
