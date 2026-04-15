@@ -42,5 +42,7 @@ class ReadingSession(models.Model):
     duration_seconds = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
+    explicit_feedback = models.IntegerField(default=0)
+
     def __str__(self):
         return f"{self.user.username} - {self.article.title[:20]} ({self.duration_seconds}s)"

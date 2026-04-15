@@ -212,3 +212,44 @@ class UserRegistrationView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [AllowAny] # Разрешаем доступ всем (даже без токена)
     serializer_class = UserRegistrationSerializer
+
+
+class ArticleRateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            article = Article.objects.get(pk=pk)
+            session = ReadingSession.objects.filter(user=request.user, article=article).order_by('-start_time').first()
+            
+            # Если сессия есть - отдаем её оценку, если нет - отдаем 0
+            feedback = session.explicit_feedback if session else 0
+            return Response({"feedback": feedback})
+            
+        except Article.DoesNotExist:
+            return Response({"error": "Статья не найдена"}, status=404)
+        
+    def post(self, request, pk):
+        action = request.data.get('action') # 'like', 'dislike' или 'neutral'
+        
+        try:
+            article = Article.objects.get(pk=pk)
+            # Находим последнюю сессию пользователя для этой статьи
+            session = ReadingSession.objects.filter(user=request.user, article=article).order_by('-start_time').first()
+            
+            if not session:
+                # Если сессии нет (пользователь нажал кнопку сразу), создаем её
+                session = ReadingSession.objects.create(user=request.user, article=article)
+
+            if action == 'like':
+                session.explicit_feedback = 1
+            elif action == 'dislike':
+                session.explicit_feedback = -1
+            else:
+                session.explicit_feedback = 0
+                
+            session.save()
+            return Response({"status": "success", "feedback": session.explicit_feedback})
+            
+        except Article.DoesNotExist:
+            return Response({"error": "Статья не найдена"}, status=404)

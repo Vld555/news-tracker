@@ -40,12 +40,20 @@
                 {{ article.content }}
             </div>
             
-            <div class="border-t border-gray-100 pt-8 flex flex-col items-center">
-                <h3 class="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wide">Помогите настроить вашу ленту</h3>
-                <div class="flex space-x-4">
-                    <button @click="submitFeedback('like')" class="flex items-center px-6 py-3 rounded-xl border transition-colors font-medium bg-white text-gray-600 border-gray-200 hover:bg-gray-50">Больше такого</button>
-                    <button @click="submitFeedback('dislike')" class="flex items-center px-6 py-3 rounded-xl border transition-colors font-medium bg-white text-gray-600 border-gray-200 hover:bg-gray-50">Меньше такого</button>
-                </div>
+            <div class="flex flex-wrap gap-4 justify-center mt-10">
+                <button @click="submitFeedback('like')" 
+                        :disabled="currentRating !== 0 || isVoting"
+                        :class="currentRating === 1 ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'" 
+                        class="px-6 py-3 rounded-xl border font-bold flex items-center transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="mr-2">👍</span> Больше такого
+                </button>
+                
+                <button @click="submitFeedback('dislike')" 
+                        :disabled="currentRating !== 0 || isVoting"
+                        :class="currentRating === -1 ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'" 
+                        class="px-6 py-3 rounded-xl border font-bold flex items-center transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="mr-2">👎</span> Меньше такого
+                </button>
             </div>
         </main>
     </div>
@@ -59,7 +67,10 @@
                 return {
                     article: { title: 'Загрузка...', content: '' },
                     readingSeconds: 0,
-                    timerInterval: null
+                    timerInterval: null,
+                    currentRating: 0,
+                    // ДОБАВЛЕНО: Флаг для защиты от дабл-клика
+                    isVoting: false 
                 }
             },
             computed: {
@@ -116,11 +127,73 @@
                     } catch (error) {
                         console.error('Ошибка сети:', error);
                     }
+                },
+                
+                // ДОБАВЛЕНО: функция для кнопок "Больше/Меньше такого"
+                async submitFeedback(action) {
+                    if (this.currentRating !== 0 || this.isVoting) return;
+                    const token = localStorage.getItem('access_token');
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const id = urlParams.get('id');
+
+                    if (!token) {
+                        alert('Войдите, чтобы оценивать статьи!');
+                        return;
+                    }
+                    this.isVoting = true;
+                    try {
+                        const res = await fetch(`http://localhost:8000/api/v1/articles/${id}/rate/`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ action: action })
+                        });
+
+                        if (res.ok) {
+                            const data = await res.json();
+                            // Сохраняем ответ сервера (1, -1 или 0), чтобы кнопка закрасилась
+                            this.currentRating = data.feedback; 
+                        } else {
+                            console.error('Ошибка сервера при оценке');
+                        }
+                    } catch (e) {
+                        console.error('Сетевая ошибка:', e);
+                    } finally {
+                        // Снимаем блокировку отправки (если оценка прошла успешно, 
+                        // кнопки останутся заблокированными благодаря currentRating !== 0)
+                        this.isVoting = false;
+                    }
+                },
+                async fetchRating() {
+                    const token = localStorage.getItem('access_token');
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const id = urlParams.get('id');
+
+                    if (!token || !id) return; // Если не авторизован - просто не грузим оценку
+
+                    try {
+                        const res = await fetch(`http://localhost:8000/api/v1/articles/${id}/rate/`, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${token}`
+                            }
+                        });
+
+                        if (res.ok) {
+                            const data = await res.json();
+                            // Подставляем полученную из базы оценку! Кнопки сразу закрасятся.
+                            this.currentRating = data.feedback; 
+                        }
+                    } catch (e) {
+                        console.error('Ошибка загрузки оценки:', e);
+                    }
                 }
             },
             async mounted() {
                 await this.fetchArticle();
-
+                await this.fetchRating();
                 this.timerInterval = setInterval(() => {
                     this.readingSeconds++;
                     if (this.readingSeconds % 15 === 0) this.sendHeartbeat();

@@ -186,9 +186,32 @@
                         await this.fetchSources();
                     }
                 },
-                async deleteSource(id) {
-                    if (!confirm('Удалить этот источник?')) return;
-                    this.sources = this.sources.filter(s => s.id !== id);
+                async deleteSource(sourceId) {
+                    // Запрашиваем подтверждение, чтобы не удалить случайно
+                    if (!confirm('Точно удалить этот источник? Вместе с ним удалятся все его статьи из ленты.')) return;
+
+                    const token = localStorage.getItem('access_token');
+                    
+                    try {
+                        // ВАЖНО: слэш в самом конце URL обязателен!
+                        const response = await fetch(`http://localhost:8000/api/v1/sources/${sourceId}/`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${token}`
+                            }
+                        });
+
+                        if (response.ok) {
+                            // Если сервер ответил успехом (204 No Content), 
+                            // мгновенно убираем источник с экрана без перезагрузки страницы
+                            this.sources = this.sources.filter(s => s.id !== sourceId);
+                        } else {
+                            console.error('Ошибка сервера при удалении');
+                            alert('Не удалось удалить источник.');
+                        }
+                    } catch (error) {
+                        console.error('Сетевая ошибка:', error);
+                    }
                 },
                 logout() {
                     localStorage.removeItem('access_token');
