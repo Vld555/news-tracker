@@ -26,3 +26,17 @@ class HeartbeatSerializer(serializers.Serializer):
     Специальный сериализатор для валидации входящих пингов от фронтенда
     """
     duration_seconds = serializers.IntegerField(min_value=1, max_value=60)
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['username', 'password']
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            password=validated_data['password']
+        )
+        return user

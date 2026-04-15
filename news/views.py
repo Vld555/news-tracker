@@ -4,7 +4,7 @@ import pandas as pd
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated, AllowAny
 
 from .models import Source, Article, ReadingSession, User
 from .serializers import SourceSerializer, ArticleSerializer, HeartbeatSerializer, UserSerializer
@@ -15,6 +15,7 @@ from django.utils.timezone import now
 from django.db.models import Sum
 from datetime import timedelta
 from .models import ReadingSession, Source
+from .serializers import UserRegistrationSerializer
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
@@ -199,3 +200,8 @@ class HeartbeatView(APIView):
             return Response({"error": "Статья не найдена"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
+        
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    permission_classes = [AllowAny] # Разрешаем доступ всем (даже без токена)
+    serializer_class = UserRegistrationSerializer
