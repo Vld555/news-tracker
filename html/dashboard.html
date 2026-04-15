@@ -112,7 +112,11 @@ createApp({
         return {
             analytics: null,
             loading: true,
-            errorMessage: ''
+            errorMessage: '',
+            // ДОБАВЛЕНО: пустой объект пользователя, чтобы Vue не выдавал ошибку
+            user: {
+                username: ''
+            }
         }
     },
     async mounted() {
@@ -124,6 +128,9 @@ createApp({
         }
 
         try {
+            // ДОБАВЛЕНО: запрашиваем имя пользователя для аватарки
+            await this.fetchProfile(token);
+
             const response = await fetch('http://localhost:8000/api/v1/analytics/', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -155,7 +162,24 @@ createApp({
         }
     },
     methods: {
+        // ДОБАВЛЕНО: метод получения профиля (такой же, как в index.html)
+        async fetchProfile(token) {
+            try {
+                const res = await fetch('http://localhost:8000/api/v1/profile/', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.user.username = data.username;
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки профиля:', e);
+            }
+        },
         renderCharts() {
+            // Проверка, есть ли данные для графиков, чтобы Chart.js не падал
+            if (!this.analytics || !this.analytics.categories || !this.analytics.activity) return;
+
             const ctxCategory = document.getElementById('categoryChart').getContext('2d');
             new Chart(ctxCategory, {
                 type: 'doughnut',
