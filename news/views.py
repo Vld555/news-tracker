@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
-from django.db.models import Sum
+from django.db.models import Sum, Count
 from datetime import timedelta
 from .models import ReadingSession, Source
 from .serializers import UserRegistrationSerializer
@@ -125,42 +125,62 @@ class AnalyticsAPIView(APIView):
         today = now().date()
         week_ago = today - timedelta(days=7)
 
-        # 1. Берем сессии пользователя за последние 7 дней (ИСПОЛЬЗУЕМ start_time)
+        # 1. Берем сессии за 7 дней (только те, где реально читали, >0 секунд)
         sessions = ReadingSession.objects.filter(
             user=user, 
-            start_time__date__gte=week_ago
+            start_time__date__gte=week_ago,
+            duration_seconds__gt=0
         )
 
-        # 2. Считаем время чтения за сегодня (в минутах)
         today_sessions = sessions.filter(start_time__date=today)
         today_sec = today_sessions.aggregate(total=Sum('duration_seconds'))['total'] or 0
         today_min = today_sec // 60
 
-        # 3. Данные для круговой диаграммы (группировка по НОВОЙ категории статьи)
+        # 2. Группируем по категориям и считаем и время, и КОЛИЧЕСТВО статей
         categories_qs = sessions.values('article__category').annotate(
-            total_time=Sum('duration_seconds')
+            total_time=Sum('duration_seconds'),
+            article_count=Count('article', distinct=True) # Считаем уникальные статьи
         ).order_by('-total_time')
 
-        # Используем поле 'article__category' вместо 'article__source__category'
         cat_labels = [item['article__category'] or 'Без категории' for item in categories_qs]
-        cat_data = [item['total_time'] // 60 for item in categories_qs]
+        
 
-        # 4. Данные для столбчатой диаграммы (активность по дням)
+        cat_data = [max(1, item['total_time'] // 60) for item in categories_qs]
+
+        # 3. ЛОГИКА ДЛЯ ТОП-КАТЕГОРИИ И САММАРИ
+        if categories_qs.exists():
+            top_cat_name = categories_qs[0]['article__category'] or "Общее"
+            top_cat_count = categories_qs[0]['article_count']
+            
+            if len(categories_qs) == 1:
+                recommendation = f"На этой неделе вы полностью сфокусировались на теме «{top_cat_name}». Чтобы алгоритм рекомендаций обучался эффективнее, попробуйте почитать и оценить статьи из других рубрик."
+            else:
+                second_cat_name = categories_qs[1]['article__category'] or "Разное"
+                recommendation = f"Вы отлично погрузились в тему «{top_cat_name}» на этой неделе! Алгоритм уже подстраивает ленту под вас. Мы также заметили ваш интерес к теме «{second_cat_name}» и добавим больше таких лонгридов в выдачу."
+        else:
+            top_cat_name = "Нет данных"
+            top_cat_count = 0
+            recommendation = "Ваш информационный рацион пока пуст. Почитайте пару статей в ленте, чтобы алгоритм смог проанализировать ваши предпочтения!"
+
         days_labels = []
         days_data = []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
-            # Ищем сумму секунд для конкретного дня (ИСПОЛЬЗУЕМ start_time)
             day_sec = sessions.filter(start_time__date=d).aggregate(total=Sum('duration_seconds'))['total'] or 0
-            
             days_labels.append(d.strftime('%d.%m'))
             days_data.append(day_sec // 60)
 
+        # 4. Отдаем новые данные на фронтенд
         return Response({
             "today_minutes": today_min,
             "limit_minutes": (getattr(user, 'daily_reading_limit', 3600) or 0) // 60,
             "categories": {"labels": cat_labels, "data": cat_data},
-            "activity": {"labels": days_labels, "data": days_data}
+            "activity": {"labels": days_labels, "data": days_data},
+            "top_category": {
+                "name": top_cat_name,
+                "count": top_cat_count
+            },
+            "recommendation": recommendation
         })
     
 
