@@ -1,22 +1,15 @@
 import logging
 import requests
-import nltk # Добавили импорт для загрузки словарей
 from bs4 import BeautifulSoup
 from django.utils import timezone
 from celery import shared_task
 from sentence_transformers import SentenceTransformer
 from .models import Article, Source, User
-from newspaper import Article as NewspaperArticle
+from newspaper import Article as NewspaperArticle, Config # ДОБАВИЛИ Config
 from datetime import timedelta
 from .ml import train_user_model
 
 logger = logging.getLogger(__name__)
-
-# Загружаем нужные компоненты для NLP один раз при импорте
-try:
-    nltk.download('punkt', quiet=True)
-except:
-    pass
 
 embedder = None
 MODEL_NAME = 'DeepPavlov/rubert-base-cased-sentence'
@@ -24,61 +17,64 @@ MODEL_NAME = 'DeepPavlov/rubert-base-cased-sentence'
 @shared_task
 def parse_rss_and_embed():
     global embedder
+    logger.info("🚀 Запуск задачи parse_rss_and_embed...")
+    
     if embedder is None:
+        logger.info("⏳ Загрузка модели SentenceTransformer (может занять 1-2 минуты при первом запуске)...")
         embedder = SentenceTransformer(MODEL_NAME)
+        logger.info("✅ Модель NLP успешно загружена!")
     
     sources = Source.objects.exclude(rss_url__isnull=True).exclude(rss_url__exact='')
+    logger.info(f"📡 Найдено источников для парсинга: {sources.count()}")
     
     for source in sources:
+        logger.info(f"🔄 Парсинг источника: {source.name} ({source.rss_url})")
         try:
-            response = requests.get(source.rss_url, timeout=30)
+            # 1. Загружаем RSS с таймаутом
+            response = requests.get(source.rss_url, timeout=15)
             soup = BeautifulSoup(response.content, 'xml')
             items = soup.find_all('item')
+            logger.info(f"   Найдено {len(items)} записей в ленте.")
 
             for item in items[:10]:
                 link = item.link.text if item.link else ''
-                if not link or Article.objects.filter(url=link).exists():
+                if not link:
                     continue
                 
-                full_content = ""
-                article_category = None
+                if Article.objects.filter(url=link).exists():
+                    continue # Пропускаем уже существующие статьи
                 
-                # Попытка 1: Качаем полный текст через newspaper3k
+                full_content = ""
+                
+                # 2. Настраиваем Newspaper3k с жесткими лимитами
+                config = Config()
+                config.request_timeout = 10
+                config.language = 'ru'
+                config.fetch_images = False # Не тратим время на картинки
+                
                 try:
-                    news_article = NewspaperArticle(link, language='ru') 
+                    news_article = NewspaperArticle(link, config=config) 
                     news_article.download()
                     news_article.parse()
-                    full_content = news_article.text # СОХРАНЯЕМ ТЕКСТ СРАЗУ
-                    
-                    # Пытаемся сделать NLP отдельно, чтобы не сломать всё
-                    try:
-                        news_article.nlp()
-                        if news_article.keywords:
-                            article_category = news_article.keywords[0].capitalize()
-                    except:
-                        pass
+                    full_content = news_article.text
+                    # Мы полностью удалили .nlp(), так как именно он вешал Celery!
                 except Exception as e:
-                    logger.warning(f"Newspaper3k не справился с {link}: {e}")
+                    logger.warning(f"   ⚠️ Не удалось скачать текст с {link}: {e}")
 
-                # Попытка 2 (Золотое правило): Если текст не скачался, берем из RSS
+                # 3. Запасной вариант: берем из RSS, если скачалось слишком мало текста
                 if not full_content or len(full_content) < 150:
                     rss_description = item.description.text if item.description else ""
                     full_content = BeautifulSoup(rss_description, "html.parser").get_text()
 
-                # Попытка 3: Ищем категорию в RSS, если NLP не сработал
-                if not article_category:
-                    article_category = item.category.text if item.category else None
-                
-                # Финальный запасной вариант для категории
-                if not article_category:
-                    article_category = source.category or "Общее"
+                # 4. Категорию берем из RSS или ставим дефолтную (убрали NLP)
+                article_category = item.category.text if item.category else source.category or "Общее"
 
-                if not full_content:
-                    full_content = "Текст статьи временно недоступен."
+                if not full_content or len(full_content) < 20:
+                    full_content = "Текст статьи недоступен. Читайте подробности по ссылке."
 
                 title = item.title.text if item.title else 'Без заголовка'
                 
-                # Делаем эмбеддинг
+                # 5. Делаем эмбеддинг
                 embedding = embedder.encode(f"{title}. {full_content[:500]}").tolist()
                 
                 Article.objects.create(
@@ -90,31 +86,25 @@ def parse_rss_and_embed():
                     published_at=timezone.now(),
                     embedding=embedding
                 )
-                logger.info(f"✅ Добавлена статья [{article_category}]: {title}")
+                logger.info(f"   ✅ Добавлена статья: {title}")
 
         except Exception as e:
-            logger.error(f"❌ Ошибка источника {source.name}: {e}")
+            logger.error(f"❌ Ошибка обработки источника {source.name}: {e}")
 
 @shared_task
 def clear_old_articles():
-    # Удаляем статьи старше 24 часов (можешь поменять на 2 часа для теста)
     threshold = timezone.now() - timedelta(hours=24)
     deleted, _ = Article.objects.filter(published_at__lt=threshold).delete()
     logger.info(f"🧹 Очистка: удалено {deleted} старых статей.")
 
-
-
 @shared_task
 def retrain_recommendation_models():
-    """Задача запускается по расписанию и обновляет ML-модели всех активных юзеров"""
     users = User.objects.all()
     updated_count = 0
-    
     for user in users:
         logger.info(f"Запуск обучения для юзера {user.username}...")
         success = train_user_model(user.id)
         if success:
             updated_count += 1
-            
     logger.info(f"🎯 Обучение завершено. Обновлено моделей: {updated_count}")
     return updated_count

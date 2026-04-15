@@ -16,6 +16,12 @@ from django.db.models import Sum
 from datetime import timedelta
 from .models import ReadingSession, Source
 from .serializers import UserRegistrationSerializer
+from rest_framework.pagination import PageNumberPagination
+
+class ArticlePagination(PageNumberPagination):
+    page_size = 10 # По 10 статей на страницу
+    page_size_query_param = 'page_size'
+
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
@@ -48,6 +54,7 @@ class SourceListCreateView(generics.ListCreateAPIView):
 class ArticleListView(generics.ListAPIView):
     serializer_class = ArticleSerializer
     # permission_classes = [IsAuthenticated] # Раскомментируй, если лента только для залогиненных
+    pagination_class = ArticlePagination
 
     def get_queryset(self):
         user = self.request.user
