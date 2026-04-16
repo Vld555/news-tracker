@@ -156,6 +156,9 @@ CELERY_BEAT_SCHEDULE = {
     'train-models-every-12-hours': {
         'task': 'news.tasks.retrain_recommendation_models',
         'schedule': 43200.0, # 12 часов в секундах (для продакшена)
-
+    },
+    'update-llm-analysis-every-10-min': {
+        'task': 'news.tasks.update_llm_dashboard_analysis',
+        'schedule': 600.0, # 10 минут
     },
 }

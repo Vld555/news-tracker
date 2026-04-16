@@ -39,6 +39,8 @@ services:
         condition: service_healthy # Ждем, пока healthcheck базы не скажет "OK"
       redis:
         condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   celery:
     build: .
@@ -56,6 +58,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   celery-beat:
     build: .
     command: celery -A core beat -l info
@@ -72,6 +76,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-
+    extra_hosts:
+        - "host.docker.internal:host-gateway"
 volumes:
   postgres_data:

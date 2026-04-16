@@ -166,6 +166,27 @@ createApp({
         }
     },
     methods: {
+        // В methods твоего Vue приложения на dashboard.html
+        async agreeWithCategory(cat) {
+            const token = localStorage.getItem('access_token');
+            try {
+                const res = await fetch('http://localhost:8000/api/v1/interests/add/', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ category: cat })
+                });
+                if (res.ok) {
+                    alert(`Категория "${cat}" добавлена в приоритеты!`);
+                    // Можно удалить категорию из списка предложенных локально
+                    this.analytics.suggestions = this.analytics.suggestions.filter(s => s !== cat);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        },
         // ДОБАВЛЕНО: метод получения профиля (такой же, как в index.html)
         async fetchProfile(token) {
             try {

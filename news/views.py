@@ -17,6 +17,10 @@ from datetime import timedelta
 from .models import ReadingSession, Source
 from .serializers import UserRegistrationSerializer
 from rest_framework.pagination import PageNumberPagination
+import requests
+import json
+from rest_framework.views import APIView
+from .models import UserInterest
 
 class ArticlePagination(PageNumberPagination):
     page_size = 10 # По 10 статей на страницу
@@ -65,11 +69,21 @@ class ArticleListView(generics.ListAPIView):
         # Если юзер не авторизован, отдаем просто свежие новости по дате
         if not user.is_authenticated:
             return queryset
+            
+        # Получаем подтвержденные юзером интересы из базы
+        confirmed_interests = list(user.interests.values_list('category', flat=True))
 
         model_path = f'ml_models/catboost_user_{user.id}.cbm'
         
-        # 2. Если модель еще не обучилась (нет файла), отдаем ленту по дате
+        # 2. Если модель еще не обучилась (нет файла)
         if not os.path.exists(model_path):
+            # Если юзер уже выбрал интересы через Ollama, поднимаем их наверх даже без CatBoost
+            if confirmed_interests:
+                articles_list = list(queryset)
+                for article in articles_list:
+                    article.match_score = 1.0 if article.category in confirmed_interests else 0.0
+                articles_list.sort(key=lambda x: x.match_score, reverse=True)
+                return articles_list
             return queryset
 
         # 3. УМНОЕ РАНЖИРОВАНИЕ (Inference)
@@ -104,7 +118,13 @@ class ArticleListView(generics.ListAPIView):
 
             # Привязываем предсказанные вероятности к объектам статей
             for i, article in enumerate(articles_list):
-                article.match_score = probabilities[i]
+                score = probabilities[i]
+                
+                # БОНУС: Если категория подтверждена юзером, накидываем +0.25 вероятности
+                if article.category in confirmed_interests:
+                    score += 0.25 
+                    
+                article.match_score = score
 
             # Сортируем: чем выше вероятность (score), тем выше статья в ленте!
             articles_list.sort(key=lambda x: x.match_score, reverse=True)
@@ -116,6 +136,38 @@ class ArticleListView(generics.ListAPIView):
             # Если что-то пошло не так (например, ошибка Pandas), отдаем просто по дате
             return queryset
 
+
+
+def get_ollama_analysis(user_data):
+    """Запрос к локальной Ollama через API"""
+    ollama_url = "http://host.docker.internal:11434/api/generate"
+    
+    prompt = f"""
+    Ты — аналитик новостного рациона. Проанализируй данные пользователя: {user_data}.
+    Напиши краткое резюме на русском (2-3 предложения) и предложи 3 новые категории.
+    Верни ответ СТРОГО в формате JSON:
+    {{"summary": "текст", "suggestions": ["категория1", "категория2", "категория3"]}}
+    """
+    
+    payload = {
+        "model": "qwen2.5:0.5b",  # <--- ПОМЕНЯЙ ЗДЕСЬ
+        "prompt": prompt,
+        "format": "json",
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(ollama_url, json=payload, timeout=30)
+        result = response.json()
+        return json.loads(result['response'])
+    except Exception as e:
+        print(f"Ollama Error: {e}")
+        return {
+            "summary": "Продолжайте читать интересные вам статьи для более точного анализа.",
+            "suggestions": ["Наука", "Технологии", "Искусство"]
+        }
+    
+from .models import UserDashboardAnalysis
 
 class AnalyticsAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -136,32 +188,24 @@ class AnalyticsAPIView(APIView):
         today_sec = today_sessions.aggregate(total=Sum('duration_seconds'))['total'] or 0
         today_min = today_sec // 60
 
-        # 2. Группируем по категориям и считаем и время, и КОЛИЧЕСТВО статей
+        # 2. Группируем по категориям и считаем время и КОЛИЧЕСТВО статей
         categories_qs = sessions.values('article__category').annotate(
             total_time=Sum('duration_seconds'),
-            article_count=Count('article', distinct=True) # Считаем уникальные статьи
+            article_count=Count('article', distinct=True)
         ).order_by('-total_time')
 
         cat_labels = [item['article__category'] or 'Без категории' for item in categories_qs]
-        
-
         cat_data = [max(1, item['total_time'] // 60) for item in categories_qs]
 
-        # 3. ЛОГИКА ДЛЯ ТОП-КАТЕГОРИИ И САММАРИ
+        # 3. ЛОГИКА ДЛЯ ТОП-КАТЕГОРИИ (Старые текстовые саммари мы отсюда убрали)
         if categories_qs.exists():
             top_cat_name = categories_qs[0]['article__category'] or "Общее"
             top_cat_count = categories_qs[0]['article_count']
-            
-            if len(categories_qs) == 1:
-                recommendation = f"На этой неделе вы полностью сфокусировались на теме «{top_cat_name}». Чтобы алгоритм рекомендаций обучался эффективнее, попробуйте почитать и оценить статьи из других рубрик."
-            else:
-                second_cat_name = categories_qs[1]['article__category'] or "Разное"
-                recommendation = f"Вы отлично погрузились в тему «{top_cat_name}» на этой неделе! Алгоритм уже подстраивает ленту под вас. Мы также заметили ваш интерес к теме «{second_cat_name}» и добавим больше таких лонгридов в выдачу."
         else:
             top_cat_name = "Нет данных"
             top_cat_count = 0
-            recommendation = "Ваш информационный рацион пока пуст. Почитайте пару статей в ленте, чтобы алгоритм смог проанализировать ваши предпочтения!"
 
+        # 4. ДАННЫЕ ДЛЯ ГРАФИКА АКТИВНОСТИ ПО ДНЯМ
         days_labels = []
         days_data = []
         for i in range(6, -1, -1):
@@ -170,18 +214,33 @@ class AnalyticsAPIView(APIView):
             days_labels.append(d.strftime('%d.%m'))
             days_data.append(day_sec // 60)
 
-        # 4. Отдаем новые данные на фронтенд
+        # Высчитываем лимит чтения в минутах
+        limit_min = (getattr(user, 'daily_reading_limit', 3600) or 0) // 60
+
+        # 5. ЗАБИРАЕМ АНАЛИЗ ОТ OLLAMA ИЗ БАЗЫ
+        # get_or_create создаст пустую запись, если фоновая задача еще ни разу не отработала
+        analysis, created = UserDashboardAnalysis.objects.get_or_create(user=request.user)
+
         return Response({
             "today_minutes": today_min,
-            "limit_minutes": (getattr(user, 'daily_reading_limit', 3600) or 0) // 60,
+            "limit_minutes": limit_min,
             "categories": {"labels": cat_labels, "data": cat_data},
             "activity": {"labels": days_labels, "data": days_data},
-            "top_category": {
-                "name": top_cat_name,
-                "count": top_cat_count
-            },
-            "recommendation": recommendation
+            "top_category": {"name": top_cat_name, "count": top_cat_count},
+            "recommendation": analysis.summary,
+            "suggestions": analysis.suggestions 
         })
+class AddInterestView(APIView):
+    """Эндпоинт для подтверждения интереса к категории"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        category = request.data.get('category')
+        if category:
+            UserInterest.objects.get_or_create(user=request.user, category=category)
+            return Response({"status": "success"})
+        return Response({"error": "No category provided"}, status=400)
+
     
 
 class ArticleDetailView(generics.RetrieveAPIView):

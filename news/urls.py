@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import \
-    SourceViewSet, ArticleListView, AnalyticsAPIView, ArticleDetailView, HeartbeatView, UserProfileView, UserRegistrationView, ArticleRateView
+    SourceViewSet, ArticleListView, AnalyticsAPIView, ArticleDetailView, HeartbeatView, UserProfileView, UserRegistrationView, ArticleRateView, AddInterestView
 
 # Роутер автоматически создаст эндпоинты для GET, POST, PUT и DELETE запросов к источникам
 router = DefaultRouter()
@@ -16,4 +16,5 @@ urlpatterns = [
     path('articles/<int:pk>/', ArticleDetailView.as_view(), name='article-detail'),
     path('articles/<int:pk>/heartbeat/', HeartbeatView.as_view(), name='article-heartbeat'),
     path('profile/', UserProfileView.as_view(), name='profile-detail'),
+    path('interests/add/', AddInterestView.as_view(), name='add-interest')
 ]

@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from django.utils import timezone
 from celery import shared_task
 from sentence_transformers import SentenceTransformer
-from .models import Article, Source, User
+from .models import Article, Source, User, UserDashboardAnalysis, ReadingSession
 from newspaper import Article as NewspaperArticle, Config # ДОБАВИЛИ Config
 from datetime import timedelta
 from .ml import train_user_model
@@ -14,6 +14,86 @@ logger = logging.getLogger(__name__)
 embedder = None
 MODEL_NAME = 'DeepPavlov/rubert-base-cased-sentence'
 
+# news/tasks.py
+import requests
+import json
+from .models import User, ReadingSession, UserDashboardAnalysis
+from django.db.models import Sum
+from django.utils.timezone import now
+from datetime import timedelta
+
+@shared_task
+def update_llm_dashboard_analysis():
+    users = User.objects.all()
+    ollama_url = "http://host.docker.internal:11434/api/generate"
+
+    for user in users:
+        today = now().date()
+        week_ago = today - timedelta(days=7)
+        sessions = ReadingSession.objects.filter(user=user, start_time__date__gte=week_ago)
+        
+        categories_stats = sessions.values('article__category').annotate(
+            total_time=Sum('duration_seconds')
+        ).order_by('-total_time')[:3]
+
+        cat_list = [c['article__category'] or "Общее" for c in categories_stats]
+        top_cat = cat_list[0] if cat_list else "Разное"
+
+        # ЖЕСТКИЙ ПРОМПТ В ФОРМАТЕ ДИАЛОГА
+        prompt = f"""System: Выдать только валидный JSON. Никакого текста, никаких пояснений.
+User: Категории пользователя: {cat_list}.
+Assistant:
+{{
+  "summary": "На этой неделе вас больше всего интересовала тема {top_cat}.",
+  "suggestions": ["Технологии", "Наука", "Культура"]
+}}
+User: Категории пользователя: {cat_list}. Сгенерируй новые темы.
+Assistant:
+"""
+
+        try:
+            response = requests.post(ollama_url, json={
+                "model": "qwen2.5:0.5b",
+                "prompt": prompt,
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": 0.0  # Убиваем "фантазию" модели в ноль
+                }
+            }, timeout=60)
+            
+            raw_text = response.json().get('response', '').strip()
+            
+            # Вырезаем всё, кроме JSON (ищем первую { и последнюю })
+            start_idx = raw_text.find('{')
+            end_idx = raw_text.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1:
+                clean_json = raw_text[start_idx:end_idx+1]
+                result = json.loads(clean_json)
+            else:
+                raise ValueError("В ответе не найдено JSON структуры.")
+            
+            UserDashboardAnalysis.objects.update_or_create(
+                user=user,
+                defaults={
+                    'summary': result.get('summary', f'Мы видим, что вы активно читаете статьи в категории "{top_cat}".'),
+                    'suggestions': result.get('suggestions', [])
+                }
+            )
+            print(f"✅ Успешный анализ для {user.username}")
+            
+        except Exception as e:
+            print(f"❌ Ошибка LLM для {user.username}: {e}. Используем fallback.")
+            # Если LLM снова выдала бред, ставим красивую дефолтную заглушку вместо ошибки
+            UserDashboardAnalysis.objects.update_or_create(
+                user=user,
+                defaults={
+                    'summary': f'Ваш основной фокус на этой неделе: "{top_cat}". Продолжайте в том же духе!',
+                    'suggestions': ['IT', 'Инновации', 'Искусство']
+                }
+            )
+        
 @shared_task
 def parse_rss_and_embed():
     global embedder
