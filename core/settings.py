@@ -17,7 +17,7 @@ SECRET_KEY = env(
     'SECRET_KEY', default='твоя-супер-секретная-строка-для-разработки')
 DEBUG = env('DEBUG', default=True)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
