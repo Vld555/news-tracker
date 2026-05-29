@@ -31,7 +31,6 @@ class Article(models.Model):
         Source, on_delete=models.CASCADE, related_name='articles')
     title = models.CharField(max_length=500)
     content = models.TextField()
-    # НОВОЕ ПОЛЕ:
     category = models.CharField(max_length=100, blank=True, null=True) 
     url = models.URLField(unique=True)
     published_at = models.DateTimeField()
@@ -57,7 +56,7 @@ class ReadingSession(models.Model):
 class UserDashboardAnalysis(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='dashboard_analysis')
     summary = models.TextField(default="Анализ рациона подготавливается...")
-    suggestions = models.JSONField(default=list) # Список категорий ["Python", "Кино"]
+    suggestions = models.JSONField(default=list)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

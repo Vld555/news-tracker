@@ -9,7 +9,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # Добавляем проверку здоровья: контейнер будет пинговать сам себя
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tracker_user -d news_tracker_db"]
       interval: 5s
@@ -36,7 +35,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
-        condition: service_healthy # Ждем, пока healthcheck базы не скажет "OK"
+        condition: service_healthy 
       redis:
         condition: service_started
     extra_hosts:

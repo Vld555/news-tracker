@@ -13,7 +13,6 @@ def train_user_model(user_id):
     Собирает историю чтения пользователя и обучает персональную модель CatBoost
     с учетом взвешивания явного и неявного фидбека.
     """
-    # 1. Загружаем все сессии чтения пользователя
     sessions = ReadingSession.objects.filter(user_id=user_id)
 
     if not sessions.exists():
@@ -23,7 +22,6 @@ def train_user_model(user_id):
     data = []
     seen_article_ids = []
 
-    # Функция для извлечения фичей из статьи
     def extract_features(article):
         row = {
             'article_id': article.id,
@@ -38,45 +36,36 @@ def train_user_model(user_id):
                 row[f'emb_{i}'] = 0.0
         return row
 
-    # 2. ОБРАБАТЫВАЕМ СЕССИИ (Явный и Неявный фидбек)
     for session in sessions:
         article = session.article
         seen_article_ids.append(article.id)
-        
         row = extract_features(article)
-        
-        # ЛОГИКА ВЗВЕШИВАНИЯ
         if session.explicit_feedback == 1:
             row['label'] = 1
-            row['weight'] = 5.0  # Лайк: мощный позитивный сигнал
+            row['weight'] = 5.0  
         elif session.explicit_feedback == -1:
             row['label'] = 0
-            row['weight'] = 5.0  # Дизлайк: мощный негативный сигнал
+            row['weight'] = 5.0  
         else:
-            # Неявный фидбек (опираемся на таймер)
             if session.duration_seconds >= 15:
                 row['label'] = 1
-                row['weight'] = 1.0  # Долго читал: обычный позитивный сигнал
+                row['weight'] = 1.0  
             else:
                 row['label'] = 0
-                row['weight'] = 1.0  # Открыл и сразу закрыл: обычный негативный сигнал
-                
+                row['weight'] = 1.0    
         data.append(row)
 
-    # 3. ДОБАВЛЯЕМ НЕПРОЧИТАННЫЕ СТАТЬИ (Фоновый негатив)
-    # Это нужно, чтобы модель не забывала о статьях, которые юзер просто проигнорировал в ленте
     week_ago = now() - timedelta(days=7)
     negatives = Article.objects.filter(published_at__gte=week_ago)\
                                .exclude(id__in=seen_article_ids)\
-                               .order_by('?')[:len(seen_article_ids) * 2] # Берем в 2 раза больше непрочитанных
+                               .order_by('?')[:len(seen_article_ids) * 2] 
 
     for n in negatives:
         row = extract_features(n)
         row['label'] = 0
-        row['weight'] = 0.5  # Игнор в ленте — слабый негативный сигнал
+        row['weight'] = 0.5  
         data.append(row)
 
-    # 4. ФОРМИРУЕМ DATAFRAME
     df = pd.DataFrame(data)
     os.makedirs('ml_models', exist_ok=True)
     csv_path = f'ml_models/dataset_user_{user_id}.csv'
@@ -84,11 +73,10 @@ def train_user_model(user_id):
     
     X = df.drop(columns=['article_id', 'label', 'weight'])
     y = df['label']
-    weights = df['weight']  # Выделяем колонку с весами
+    weights = df['weight']  
 
     cat_features = ['category', 'source']
 
-    # 5. ОБУЧАЕМ CATBOOST
     model = CatBoostClassifier(
         iterations=100,
         learning_rate=0.1,
@@ -98,11 +86,9 @@ def train_user_model(user_id):
     )
     
     logger.info(f"Начинаю обучение модели для юзера {user_id} на {len(df)} примерах...")
-    
-    # ПЕРЕДАЕМ ВЕСА В МОДЕЛЬ (sample_weight)
+
     model.fit(X, y, sample_weight=weights)
 
-    # 6. СОХРАНЯЕМ МОДЕЛЬ
     os.makedirs('ml_models', exist_ok=True)
     model_path = f'ml_models/catboost_user_{user_id}.cbm'
     model.save_model(model_path)

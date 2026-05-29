@@ -41,15 +41,15 @@ def update_llm_dashboard_analysis():
 
         # ЖЕСТКИЙ ПРОМПТ В ФОРМАТЕ ДИАЛОГА
         prompt = f"""System: Выдать только валидный JSON. Никакого текста, никаких пояснений.
-User: Категории пользователя: {cat_list}.
-Assistant:
-{{
-  "summary": "На этой неделе вас больше всего интересовала тема {top_cat}.",
-  "suggestions": ["Технологии", "Наука", "Культура"]
-}}
-User: Категории пользователя: {cat_list}. Сгенерируй новые темы.
-Assistant:
-"""
+            User: Категории пользователя: {cat_list}.
+            Assistant:
+            {{
+            "summary": "На этой неделе вас больше всего интересовала тема {top_cat}.",
+            "suggestions": ["Технологии", "Наука", "Культура"]
+            }}
+            User: Категории пользователя: {cat_list}. Сгенерируй новые темы.
+            Assistant:
+        """
 
         try:
             response = requests.post(ollama_url, json={
@@ -58,13 +58,12 @@ Assistant:
                 "format": "json",
                 "stream": False,
                 "options": {
-                    "temperature": 0.0  # Убиваем "фантазию" модели в ноль
+                    "temperature": 0.0 
                 }
             }, timeout=60)
             
             raw_text = response.json().get('response', '').strip()
             
-            # Вырезаем всё, кроме JSON (ищем первую { и последнюю })
             start_idx = raw_text.find('{')
             end_idx = raw_text.rfind('}')
             
@@ -141,7 +140,6 @@ def parse_rss_and_embed():
                 except Exception as e:
                     logger.warning(f"   ⚠️ Не удалось скачать текст с {link}: {e}")
 
-                # 3. Запасной вариант: берем из RSS, если скачалось слишком мало текста
                 if not full_content or len(full_content) < 150:
                     rss_description = item.description.text if item.description else ""
                     full_content = BeautifulSoup(rss_description, "html.parser").get_text()
@@ -154,7 +152,6 @@ def parse_rss_and_embed():
 
                 title = item.title.text if item.title else 'Без заголовка'
                 
-                # 5. Делаем эмбеддинг
                 embedding = embedder.encode(f"{title}. {full_content[:500]}").tolist()
                 
                 Article.objects.create(
