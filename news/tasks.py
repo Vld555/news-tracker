@@ -27,6 +27,18 @@ def update_llm_dashboard_analysis():
     users = User.objects.all()
     ollama_url = "http://host.docker.internal:11434/api/generate"
 
+    def build_summary(raw_summary, top_category, has_data):
+        if not has_data:
+            return "Пока недостаточно данных за неделю. Читайте больше статей, и я подготовлю персональный анализ."
+
+        cleaned = " ".join(str(raw_summary or "").split()).strip()
+        if cleaned:
+            if cleaned[-1] not in ".!?":
+                cleaned += "."
+            return cleaned
+
+        return f'На этой неделе вы чаще всего читали материалы по теме «{top_category}».'
+
     for user in users:
         today = now().date()
         week_ago = today - timedelta(days=7)
@@ -37,7 +49,8 @@ def update_llm_dashboard_analysis():
         ).order_by('-total_time')[:3]
 
         cat_list = [c['article__category'] or "Общее" for c in categories_stats]
-        top_cat = cat_list[0] if cat_list else "Разное"
+        has_data = bool(cat_list)
+        top_cat = cat_list[0] if has_data else "Разное"
 
         # ЖЕСТКИЙ ПРОМПТ В ФОРМАТЕ ДИАЛОГА
         prompt = f"""System: Выдать только валидный JSON. Никакого текста, никаких пояснений.
@@ -76,7 +89,7 @@ def update_llm_dashboard_analysis():
             UserDashboardAnalysis.objects.update_or_create(
                 user=user,
                 defaults={
-                    'summary': result.get('summary', f'Мы видим, что вы активно читаете статьи в категории "{top_cat}".'),
+                    'summary': build_summary(result.get('summary'), top_cat, has_data),
                     'suggestions': result.get('suggestions', [])
                 }
             )
@@ -88,7 +101,7 @@ def update_llm_dashboard_analysis():
             UserDashboardAnalysis.objects.update_or_create(
                 user=user,
                 defaults={
-                    'summary': f'Ваш основной фокус на этой неделе: "{top_cat}". Продолжайте в том же духе!',
+                    'summary': build_summary("", top_cat, has_data),
                     'suggestions': ['IT', 'Инновации', 'Искусство']
                 }
             )
